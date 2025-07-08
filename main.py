@@ -1,12 +1,14 @@
 import re
-from collections import defaultdict, Counter
 from datetime import datetime
-import geoip2.database  # pip install geoip2
+import geoip2.database
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
-# Set path to GeoLite2-City.mmdb for geo lookup (you must download this file)
+# Configuration
 GEOIP_DB_PATH = "GeoLite2-City.mmdb"
-
-LOG_PATH = "access.log"  # Change this to your log file
+LOG_PATH = "access.log"
 
 # Regular expression to parse the logs
 LOG_PATTERN = re.compile(
@@ -18,12 +20,17 @@ class LogAnalyzer:
     def __init__(self, log_path):
         self.log_path = log_path
         self.visits = []
-        self.by_ip = defaultdict(list)
-        self.content_hits = Counter()
-        self.status_counts = Counter()
+        self.by_ip = {}
+        self.content_hits = {}
+        self.status_counts = {}
         self.geoip_reader = geoip2.database.Reader(GEOIP_DB_PATH)
-
+    
     def parse_logs(self):
+        self.visits = []
+        self.by_ip = {}
+        self.content_hits = {}
+        self.status_counts = {}
+        
         with open(self.log_path, "r") as f:
             for line in f:
                 match = LOG_PATTERN.search(line)
@@ -33,73 +40,102 @@ class LogAnalyzer:
                     ip = data['ip'].strip("[]")
                     url = data['url']
                     status = int(data['status'])
-
+                    
                     self.visits.append((dt, ip, url, status))
+                    
+                    if ip not in self.by_ip:
+                        self.by_ip[ip] = []
                     self.by_ip[ip].append((dt, url, status))
-                    self.content_hits[url] += 1
-                    self.status_counts[status] += 1
-
-    def user_journey(self):
-        print("\n🧭 User Journey Samples")
-        for ip, visits in list(self.by_ip.items())[:3]:
-            print(f"\nIP: {ip}")
-            for visit in sorted(visits):
-                print(f"  {visit[0]} - {visit[1]} [{visit[2]}]")
-
-    def search_engine_visibility(self):
-        print("\n🔎 Search Engine Bots (IP & URLs)")
-        for ip, visits in self.by_ip.items():
-            if any("google" in url or "bot" in url or ip.startswith("66.") or ip.startswith("40.") for _, url, _ in visits):
-                print(f"\nIP: {ip}")
-                for dt, url, status in visits:
-                    print(f"  {dt} - {url} [{status}]")
-
-    def core_feature_engagement(self):
-        print("\n💡 Engagement with Core Features")
-        features = ["/static/js/quick-calculator.js", "/static/js/hero-map.js", "/static/js/traffic-map.js"]
-        for f in features:
-            print(f"{f} → {self.content_hits[f]} hits")
-
-    def geographic_insights(self):
-        print("\n🌍 Geographic Insights by IP")
+                    
+                    self.content_hits[url] = self.content_hits.get(url, 0) + 1
+                    self.status_counts[status] = self.status_counts.get(status, 0) + 1
+    
+    def get_geographic_data(self):
+        locations = []
         seen = set()
+        
         for ip in self.by_ip:
             if ip in seen or ":" in ip:
                 continue
+            
             try:
                 response = self.geoip_reader.city(ip)
                 city = response.city.name or "Unknown"
                 country = response.country.name or "Unknown"
-                print(f"{ip} → {city}, {country}")
-                seen.add(ip)
+                lat = float(response.location.latitude) if response.location.latitude else 0
+                lon = float(response.location.longitude) if response.location.longitude else 0
+                
+                if lat != 0 and lon != 0:
+                    locations.append({
+                        'ip': ip,
+                        'city': city,
+                        'country': country,
+                        'lat': lat,
+                        'lon': lon,
+                        'visits': len(self.by_ip[ip])
+                    })
+                    seen.add(ip)
             except Exception:
                 pass
-
-    def interest_in_content(self):
-        print("\n📌 Interest in Specific Content")
-        top = self.content_hits.most_common(5)
-        for url, count in top:
-            print(f"{url} → {count} hits")
-
-    def traffic_trends(self):
-        print("\n📈 Traffic Trends (by hour)")
-        per_hour = defaultdict(int)
+        
+        return locations
+    
+    def get_user_journey(self):
+        journeys = []
+        for ip, visits in list(self.by_ip.items())[:5]:  # Top 5 IPs
+            journey = {
+                'ip': ip,
+                'visits': [{'datetime': str(visit[0]), 'url': visit[1], 'status': visit[2]} 
+                          for visit in sorted(visits)]
+            }
+            journeys.append(journey)
+        return journeys
+    
+    def get_content_stats(self):
+        sorted_content = sorted(self.content_hits.items(), key=lambda x: x[1], reverse=True)
+        return sorted_content[:10]  # Top 10
+    
+    def get_traffic_trends(self):
+        per_hour = {}
         for dt, _, _, _ in self.visits:
             hour = dt.replace(minute=0, second=0, microsecond=0)
-            per_hour[hour] += 1
-        for hour in sorted(per_hour):
-            print(f"{hour} → {per_hour[hour]} hits")
+            hour_str = hour.strftime("%Y-%m-%d %H:00")
+            per_hour[hour_str] = per_hour.get(hour_str, 0) + 1
+        
+        return sorted(per_hour.items())
 
-    def run_all(self):
-        self.parse_logs()
-        self.user_journey()
-        self.search_engine_visibility()
-        self.core_feature_engagement()
-        self.geographic_insights()
-        self.interest_in_content()
-        self.traffic_trends()
+# FastAPI App
+app = FastAPI(title="Log Analyzer Dashboard")
+
+# Mount static files and templates
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+# Initialize analyzer
+analyzer = LogAnalyzer(LOG_PATH)
+
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    analyzer.parse_logs()
+    
+    context = {
+        "request": request,
+        "locations": analyzer.get_geographic_data(),
+        "user_journeys": analyzer.get_user_journey(),
+        "content_stats": analyzer.get_content_stats(),
+        "traffic_trends": analyzer.get_traffic_trends(),
+        "status_counts": analyzer.status_counts,
+        "total_visits": len(analyzer.visits),
+        "unique_ips": len(analyzer.by_ip)
+    }
+    
+    return templates.TemplateResponse("index.html", context)
+
+@app.get("/api/locations")
+async def get_locations():
+    analyzer.parse_logs()
+    return {"locations": analyzer.get_geographic_data()}
 
 if __name__ == "__main__":
-    analyzer = LogAnalyzer(LOG_PATH)
-    analyzer.run_all()
-
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
