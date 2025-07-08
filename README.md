@@ -1,5 +1,7 @@
 # 🌐 Web Access Log Analyzer for FastAPI
 
+![picture](https://raw.githubusercontent.com/Werevi/Log-analizer/refs/heads/main/pictures/1.png)
+
 A powerful Python-based platform to analyze web access logs via:
 
 * 🧭 **User Journey Analysis**
