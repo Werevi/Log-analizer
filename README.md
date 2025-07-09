@@ -13,6 +13,90 @@ A powerful Python-based platform to analyze web access logs via:
 
 ---
 
+## 🚀 Getting Started
+
+Follow these steps to set up and start using the **FastAPI Log Analyzer**:
+
+---
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/werevi/log-analyzer.git
+cd log-analyzer
+```
+
+---
+
+### 2. Install Dependencies
+
+Make sure you have Python 3.8+ installed, then run:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+### 3. Configure Logging in Your FastAPI Project
+
+Create a file named `log_config.yaml` in your FastAPI project with the following content:
+
+```yaml
+version: 1
+disable_existing_loggers: False
+
+formatters:
+  access:
+    format: "%(asctime)s - %(levelname)s - %(message)s"
+
+handlers:
+  access_file:
+    class: logging.FileHandler
+    filename: access.log
+    formatter: access
+    level: INFO
+
+loggers:
+  uvicorn.access:
+    handlers: [access_file]
+    level: INFO
+    propagate: False
+```
+
+This configuration will save incoming request logs to a file named `access.log`.
+
+---
+
+### 4. Run Your FastAPI Server with Logging Enabled
+
+Use the following command to start your FastAPI server with logging:
+
+```bash
+uvicorn core.main:app \
+    --log-config log_config.yaml \
+    --host 127.0.0.1 \
+    --port 9876 \
+    --workers 4
+```
+
+> Replace `core.main:app` with the path to your actual FastAPI app if it's different.
+
+---
+
+### 5. Export the Access Log
+
+After running your server, copy the generated `access.log` file from your FastAPI project into the `log-analyzer` directory:
+
+```bash
+cp /path/to/your/project/access.log ./access.log
+```
+
+Once the file is in place, you can run the analyzer and explore detailed statistics.
+
+
+---
+
 ## 📁 Sample Input Format
 
 Ensure your `access.log` follows this format:
@@ -22,37 +106,10 @@ Ensure your `access.log` follows this format:
 2025-06-16 12:33:29,584 - INFO - 66.249.66.6:58625:0 - "GET /robots.txt HTTP/1.1" 404
 ```
 
----
-
-## 🚀 Getting Started
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/werevi/log-analyzer.git
-cd log-analyzer
-```
-
-### 2. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
 ## 🌍 Geolocation Setup
 
 Download the GeoIP database (choose one):
 
-### ✅ Option 1: **DB-IP Free Database**
-
-```bash
-wget -O dbip-city-lite.mmdb.gz https://download.db-ip.com/free/dbip-city-lite-$(date +%Y-%m).mmdb.gz
-gunzip dbip-city-lite.mmdb.gz
-```
-
-### ✅ Option 2: **MaxMind GeoLite2-City**
 
 1. Register at [MaxMind GeoLite2](https://www.maxmind.com/en/geolite2/signup)
 2. Download `GeoLite2-City.mmdb`
